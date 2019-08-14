@@ -1,6 +1,6 @@
 # Experimental groovy
-(https://github.com/apache/groovy)[Apache Groovy] with new features
+[Apache Groovy](https://github.com/apache/groovy) with new features
 
 ### Features:
-- (experiments/single-expr-methods.md)[single expression methods]
+- [single expression methods](experiments/single-expr-methods.md)
 - // more in future..
