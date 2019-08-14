@@ -3,5 +3,5 @@
 
 ### Features:
 - [single expression methods](experiments/single-expr-methods.md)
-- compile static with `groovyc` by default
+- compile static with `FileSystemCompiler (groovyc)` by default
 - `-cs`, `-cd`, `-tc` arguments
