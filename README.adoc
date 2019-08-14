@@ -24,7 +24,9 @@
 Apache Groovy with experimental features
 
 === Features:
-- 
+* link:experiments/single-expr-methods.md[single-line methods]
+* // more in the future (pr welcome)
+
 
 = Apache Groovy
 The Groovy development team
