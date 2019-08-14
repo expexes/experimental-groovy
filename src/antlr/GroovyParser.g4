@@ -290,7 +290,15 @@ methodDeclaration[int t, int ct]
     |
         modifiersOpt typeParameters? returnType[$ct]?
         methodName formalParameters (nls THROWS nls qualifiedClassNameList)?
-        nls methodBody?
+        (
+            nls methodBody
+        |
+            ASSIGN singleExprMethodBody
+        )?
+    ;
+
+ singleExprMethodBody
+    :   singleExprStatement
     ;
 
 methodName
@@ -649,6 +657,15 @@ tryCatchStatement
 
 assertStatement
     :   ASSERT ce=expression (nls (COLON | COMMA) nls me=expression)?
+    ;
+
+singleExprStatement
+    :   switchStatement
+    |   tryCatchStatement
+
+    |   assertStatement
+
+    |   enhancedStatementExpression
     ;
 
 statement

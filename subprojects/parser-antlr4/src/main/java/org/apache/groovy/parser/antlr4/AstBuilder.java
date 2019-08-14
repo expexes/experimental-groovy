@@ -357,6 +357,86 @@ import static org.codehaus.groovy.runtime.DefaultGroovyMethods.last;
  */
 public class AstBuilder extends GroovyParserBaseVisitor<Object> implements GroovyParserVisitor<Object> {
 
+    private static final Map<ClassNode, Object> TYPE_DEFAULT_VALUE_MAP = Maps.of(
+            ClassHelper.int_TYPE, 0,
+            ClassHelper.long_TYPE, 0L,
+            ClassHelper.double_TYPE, 0.0D,
+            ClassHelper.float_TYPE, 0.0F,
+            ClassHelper.short_TYPE, (short) 0,
+            ClassHelper.byte_TYPE, (byte) 0,
+            ClassHelper.char_TYPE, (char) 0,
+            ClassHelper.boolean_TYPE, Boolean.FALSE
+    );
+    private static final String QUESTION_STR = "?";
+    private static final String DOT_STR = ".";
+    private static final String SUB_STR = "-";
+    private static final String ASSIGN_STR = "=";
+    private static final String VALUE_STR = "value";
+    private static final String DOLLAR_STR = "$";
+    private static final String CALL_STR = "call";
+    private static final String THIS_STR = "this";
+    private static final String SUPER_STR = "super";
+
+    // statement {    --------------------------------------------------------------------
+    private static final String VOID_STR = "void";
+    private static final String SLASH_STR = "/";
+    private static final String SLASH_DOLLAR_STR = "/$";
+    private static final String TDQ_STR = "\"\"\"";
+    private static final String TSQ_STR = "'''";
+    private static final String SQ_STR = "'";
+    private static final String DQ_STR = "\"";
+    private static final String DOLLAR_SLASH_STR = "$/";
+    private static final String VAR_STR = "var";
+    private static final Map<String, String> QUOTATION_MAP = Maps.of(
+            DQ_STR, DQ_STR,
+            SQ_STR, SQ_STR,
+            TDQ_STR, TDQ_STR,
+            TSQ_STR, TSQ_STR,
+            SLASH_STR, SLASH_STR,
+            DOLLAR_SLASH_STR, SLASH_DOLLAR_STR
+    );
+    private static final String PACKAGE_INFO = "package-info";
+    private static final String PACKAGE_INFO_FILE_NAME = PACKAGE_INFO + ".groovy";
+    private static final String GROOVY_TRANSFORM_TRAIT = "groovy.transform.Trait";
+    private static final Set<String> PRIMITIVE_TYPE_SET = Collections.unmodifiableSet(new HashSet<>(Arrays.asList("boolean", "char", "byte", "short", "int", "long", "float", "double")));
+    private static final String INSIDE_PARENTHESES_LEVEL = "_INSIDE_PARENTHESES_LEVEL";
+    private static final String IS_INSIDE_INSTANCEOF_EXPR = "_IS_INSIDE_INSTANCEOF_EXPR";
+    private static final String IS_SWITCH_DEFAULT = "_IS_SWITCH_DEFAULT";
+    private static final String IS_NUMERIC = "_IS_NUMERIC";
+    private static final String IS_STRING = "_IS_STRING";
+    private static final String IS_INTERFACE_WITH_DEFAULT_METHODS = "_IS_INTERFACE_WITH_DEFAULT_METHODS";
+    private static final String IS_INSIDE_CONDITIONAL_EXPRESSION = "_IS_INSIDE_CONDITIONAL_EXPRESSION";
+    private static final String IS_COMMAND_EXPRESSION = "_IS_COMMAND_EXPRESSION";
+    private static final String PATH_EXPRESSION_BASE_EXPR = "_PATH_EXPRESSION_BASE_EXPR";
+    private static final String PATH_EXPRESSION_BASE_EXPR_GENERICS_TYPES = "_PATH_EXPRESSION_BASE_EXPR_GENERICS_TYPES";
+    private static final String PATH_EXPRESSION_BASE_EXPR_SAFE_CHAIN = "_PATH_EXPRESSION_BASE_EXPR_SAFE_CHAIN";
+    private static final String CMD_EXPRESSION_BASE_EXPR = "_CMD_EXPRESSION_BASE_EXPR";
+    private static final String TYPE_DECLARATION_MODIFIERS = "_TYPE_DECLARATION_MODIFIERS";
+    private static final String CLASS_DECLARATION_CLASS_NODE = "_CLASS_DECLARATION_CLASS_NODE";
+    private static final String VARIABLE_DECLARATION_VARIABLE_TYPE = "_VARIABLE_DECLARATION_VARIABLE_TYPE";
+    private static final String ANONYMOUS_INNER_CLASS_SUPER_CLASS = "_ANONYMOUS_INNER_CLASS_SUPER_CLASS";
+    private static final String INTEGER_LITERAL_TEXT = "_INTEGER_LITERAL_TEXT";
+    private static final String FLOATING_POINT_LITERAL_TEXT = "_FLOATING_POINT_LITERAL_TEXT";
+    private static final String ENCLOSING_INSTANCE_EXPRESSION = "_ENCLOSING_INSTANCE_EXPRESSION";
+    private static final String CLASS_NAME = "_CLASS_NAME";
+    private final ModuleNode moduleNode;
+    private final SourceUnit sourceUnit;
+    private final GroovyLangLexer lexer;
+    private final GroovyLangParser parser;
+    private final TryWithResourcesASTTransformation tryWithResourcesASTTransformation;
+    private final GroovydocManager groovydocManager;
+
+    // } statement    --------------------------------------------------------------------
+    private final List<ClassNode> classNodeList = new LinkedList<>();
+    private final Deque<ClassNode> classNodeStack = new ArrayDeque<>();
+    private final Deque<List<InnerClassNode>> anonymousInnerClassesDefinedInMethodStack = new ArrayDeque<>();
+    private int visitingArrayInitializerCnt = 0;
+    private Tuple2<GroovyParserRuleContext, Exception> numberFormatError;
+    private int visitingLoopStatementCnt;
+    private int visitingSwitchStatementCnt;
+    private int visitingAssertStatementCnt;
+    private int visitingClosureCnt;
+
     public AstBuilder(SourceUnit sourceUnit, CompilerConfiguration compilerConfiguration) {
         this.sourceUnit = sourceUnit;
         this.moduleNode = new ModuleNode(sourceUnit);
@@ -368,6 +448,18 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
 
         this.groovydocManager = new GroovydocManager(compilerConfiguration);
         this.tryWithResourcesASTTransformation = new TryWithResourcesASTTransformation(this);
+    }
+
+    private static String nextAnonymousClassName(ClassNode outerClass) {
+        int anonymousClassCount = 0;
+        for (Iterator<InnerClassNode> it = outerClass.getInnerClasses(); it.hasNext(); ) {
+            InnerClassNode innerClass = it.next();
+            if (innerClass.isAnonymous()) {
+                anonymousClassCount += 1;
+            }
+        }
+
+        return outerClass.getName() + "$" + (anonymousClassCount + 1);
     }
 
     private CharStream createCharStream(SourceUnit sourceUnit) {
@@ -564,8 +656,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
 
         return configureAST(importNode, ctx);
     }
-
-    // statement {    --------------------------------------------------------------------
 
     @Override
     public AssertStatement visitAssertStatement(AssertStatementContext ctx) {
@@ -1053,6 +1143,8 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         return statement; // this.configureAST(statement, ctx);
     }
 
+    // expression {    --------------------------------------------------------------------
+
     @Override
     public BreakStatement visitBreakStatement(BreakStatementContext ctx) {
         if (0 == visitingLoopStatementCnt && 0 == visitingSwitchStatementCnt) {
@@ -1109,8 +1201,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
     public MethodNode visitMethodDeclarationStmtAlt(MethodDeclarationStmtAltContext ctx) {
         return configureAST(this.visitMethodDeclaration(ctx.methodDeclaration()), ctx);
     }
-
-    // } statement    --------------------------------------------------------------------
 
     @Override
     public ClassNode visitTypeDeclaration(TypeDeclarationContext ctx) {
@@ -1269,18 +1359,18 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
     private boolean containsDefaultMethods(ClassDeclarationContext ctx) {
         List<MethodDeclarationContext> methodDeclarationContextList =
                 (List<MethodDeclarationContext>) ctx.classBody().classBodyDeclaration().stream()
-                .map(ClassBodyDeclarationContext::memberDeclaration)
-                .filter(Objects::nonNull)
-                .map(e -> (Object) e.methodDeclaration())
-                .filter(Objects::nonNull).reduce(new LinkedList<MethodDeclarationContext>(), (r, e) -> {
-                    MethodDeclarationContext methodDeclarationContext = (MethodDeclarationContext) e;
+                        .map(ClassBodyDeclarationContext::memberDeclaration)
+                        .filter(Objects::nonNull)
+                        .map(e -> (Object) e.methodDeclaration())
+                        .filter(Objects::nonNull).reduce(new LinkedList<MethodDeclarationContext>(), (r, e) -> {
+                            MethodDeclarationContext methodDeclarationContext = (MethodDeclarationContext) e;
 
-                    if (createModifierManager(methodDeclarationContext).containsAny(DEFAULT)) {
-                        ((List) r).add(methodDeclarationContext);
-                    }
+                            if (createModifierManager(methodDeclarationContext).containsAny(DEFAULT)) {
+                                ((List) r).add(methodDeclarationContext);
+                            }
 
-                    return r;
-        });
+                            return r;
+                        });
 
         return !methodDeclarationContextList.isEmpty();
     }
@@ -1562,7 +1652,14 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         ClassNode[] exceptions = this.visitQualifiedClassNameList(ctx.qualifiedClassNameList());
 
         anonymousInnerClassesDefinedInMethodStack.push(new LinkedList<>());
-        Statement code = this.visitMethodBody(ctx.methodBody());
+        Statement code = null;
+
+        if (ctx.methodBody() != null) {
+            code = this.visitMethodBody(ctx.methodBody());
+        } else if (ctx.singleExprMethodBody() != null) {
+            code = this.visitSingleExprMethodBody(ctx.singleExprMethodBody());
+        }
+
         List<InnerClassNode> anonymousInnerClassList = anonymousInnerClassesDefinedInMethodStack.pop();
 
         MethodNode methodNode;
@@ -1719,7 +1816,7 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
             return;
         }
 
-        throw createParsingFailedException("The method " +  sameSigMethodNode.getText() + " duplicates another method of the same signature", ctx);
+        throw createParsingFailedException("The method " + sameSigMethodNode.getText() + " duplicates another method of the same signature", ctx);
     }
 
     private ConstructorNode createConstructorNodeForClass(String methodName, Parameter[] parameters, ClassNode[] exceptions, Statement code, ClassNode classNode, int modifiers) {
@@ -1775,6 +1872,23 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
     }
 
     @Override
+    public Statement visitSingleExprMethodBody(GroovyParser.SingleExprMethodBodyContext ctx) {
+        if (!asBoolean(ctx)) {
+            return null;
+        }
+
+        Object node = this.visit(ctx.singleExprStatement());
+
+        if (node instanceof Statement) {
+            return configureAST((Statement) this.visit(ctx), ctx);
+        } else if (node instanceof Expression) {
+            return configureAST(new ExpressionStatement((Expression) node), ctx);
+        } else {
+            return null;
+        }
+    }
+
+    @Override
     public DeclarationListStatement visitLocalVariableDeclaration(LocalVariableDeclarationContext ctx) {
         return configureAST(this.visitVariableDeclaration(ctx.variableDeclaration()), ctx);
     }
@@ -1821,12 +1935,15 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
 
         if (asBoolean(ctx.variableModifiers())) {
             modifierNodeList = this.visitVariableModifiers(ctx.variableModifiers());
-        } if (asBoolean(ctx.modifiers())) {
+        }
+        if (asBoolean(ctx.modifiers())) {
             modifierNodeList = this.visitModifiers(ctx.modifiers());
         }
 
         return modifierNodeList;
     }
+
+    // } expression    --------------------------------------------------------------------
 
     @Override
     public DeclarationListStatement visitVariableDeclaration(VariableDeclarationContext ctx) {
@@ -2050,11 +2167,11 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         }
 
         return ctx.variableInitializer().stream()
-                        .map(this::visitVariableInitializer)
-                        .collect(Collectors.toList());
+                .map(this::visitVariableInitializer)
+                .collect(Collectors.toList());
     }
 
-    private int visitingArrayInitializerCnt = 0;
+    // } primary       --------------------------------------------------------------------
 
     @Override
     public List<Expression> visitArrayInitializer(ArrayInitializerContext ctx) {
@@ -2213,8 +2330,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
                 primaryExpr
         );
     }
-
-    // expression {    --------------------------------------------------------------------
 
     @Override
     public ClassNode visitCastParExpression(CastParExpressionContext ctx) {
@@ -2574,6 +2689,8 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         return configureAST(this.visitEnhancedArgumentList(ctx.enhancedArgumentList()), ctx);
     }
 
+    // literal {       --------------------------------------------------------------------
+
     @Override
     public Expression visitEnhancedArgumentList(EnhancedArgumentListContext ctx) {
         if (!asBoolean(ctx)) {
@@ -2696,9 +2813,13 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         return StringUtils.replaceEscapes(text, slashyType);
     }
 
+    // } literal       --------------------------------------------------------------------
+
+    // gstring {       --------------------------------------------------------------------
+
     private int getSlashyType(String text) {
         return text.startsWith(SLASH_STR) ? StringUtils.SLASHY :
-                    text.startsWith(DOLLAR_SLASH_STR) ? StringUtils.DOLLAR_SLASHY : StringUtils.NONE_SLASHY;
+                text.startsWith(DOLLAR_SLASH_STR) ? StringUtils.DOLLAR_SLASHY : StringUtils.NONE_SLASHY;
     }
 
     @Override
@@ -2799,6 +2920,8 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
 
         throw createParsingFailedException("Unsupported unary expression: " + ctx.getText(), ctx);
     }
+
+    // } gstring       --------------------------------------------------------------------
 
     @Override
     public CastExpression visitCastExprAlt(CastExprAltContext ctx) {
@@ -2943,7 +3066,7 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
             case LT:
             case IN:
             case NOT_IN: {
-                if (ctx.op.getType() == IN || ctx.op.getType() == NOT_IN ) {
+                if (ctx.op.getType() == IN || ctx.op.getType() == NOT_IN) {
                     return this.createBinaryExpression(ctx.left, ctx.op, ctx.right, ctx);
                 }
 
@@ -3064,7 +3187,7 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
                                 && Types.LEFT_SQUARE_BRACKET == ((BinaryExpression) leftExpr).getOperation().getType()) // e.g. map[a] = 123 OR map['a'] = 123 OR map["$a"] = 123
                 )
 
-                ) {
+        ) {
 
             throw createParsingFailedException("The LHS of an assignment should be a variable or a field accessing expression", ctx);
         }
@@ -3076,8 +3199,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
                         this.visitEnhancedStatementExpression(ctx.enhancedStatementExpression())),
                 ctx);
     }
-
-    // } expression    --------------------------------------------------------------------
 
     // primary {       --------------------------------------------------------------------
     @Override
@@ -3109,6 +3230,8 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         return configureAST(this.visitCreator(ctx.creator()), ctx);
     }
 
+    // type {       --------------------------------------------------------------------
+
     @Override
     public VariableExpression visitThisPrmrAlt(ThisPrmrAltContext ctx) {
         return configureAST(new VariableExpression(ctx.THIS().getText()), ctx);
@@ -3118,7 +3241,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
     public VariableExpression visitSuperPrmrAlt(SuperPrmrAltContext ctx) {
         return configureAST(new VariableExpression(ctx.SUPER().getText()), ctx);
     }
-
 
     @Override
     public Expression visitParenPrmrAlt(ParenPrmrAltContext ctx) {
@@ -3142,12 +3264,12 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         return configureAST(this.visitMap(ctx.map()), ctx);
     }
 
+    // } type       --------------------------------------------------------------------
+
     @Override
     public VariableExpression visitBuiltInTypePrmrAlt(BuiltInTypePrmrAltContext ctx) {
         return configureAST(this.visitBuiltInType(ctx.builtInType()), ctx);
     }
-
-    // } primary       --------------------------------------------------------------------
 
     @Override
     public Expression visitCreator(CreatorContext ctx) {
@@ -3203,8 +3325,8 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
 
                 arrayExpression =
                         new ArrayExpression(
-                            elementType,
-                            this.visitArrayInitializer(ctx.arrayInitializer()));
+                                elementType,
+                                this.visitArrayInitializer(ctx.arrayInitializer()));
 
             } else {
                 Expression[] empties;
@@ -3250,18 +3372,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
             arrayType.addAnnotations(dimList.get(i));
         }
         return arrayType;
-    }
-
-    private static String nextAnonymousClassName(ClassNode outerClass) {
-        int anonymousClassCount = 0;
-        for (Iterator<InnerClassNode> it = outerClass.getInnerClasses(); it.hasNext();) {
-            InnerClassNode innerClass = it.next();
-            if (innerClass.isAnonymous()) {
-                anonymousClassCount += 1;
-            }
-        }
-
-        return outerClass.getName() + "$" + (anonymousClassCount + 1);
     }
 
     @Override
@@ -3463,8 +3573,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         }
     }
 
-    // literal {       --------------------------------------------------------------------
-
     @Override
     public ConstantExpression visitIntegerLiteralAlt(IntegerLiteralAltContext ctx) {
         String text = ctx.IntegerLiteral().getText();
@@ -3517,10 +3625,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
     public ConstantExpression visitNullLiteralAlt(NullLiteralAltContext ctx) {
         return configureAST(new ConstantExpression(null), ctx);
     }
-
-    // } literal       --------------------------------------------------------------------
-
-    // gstring {       --------------------------------------------------------------------
 
     @Override
     public GStringExpression visitGstring(GstringContext ctx) {
@@ -3651,8 +3755,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
 
         return configureAST(variableExpression, ctx);
     }
-
-    // } gstring       --------------------------------------------------------------------
 
     @Override
     public LambdaExpression visitStandardLambdaExpression(StandardLambdaExpressionContext ctx) {
@@ -3879,6 +3981,17 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
                 .collect(Collectors.toList());
     }
 
+    /*
+    private org.codehaus.groovy.syntax.Token createGroovyToken(String text, int startLine, int startColumn) {
+        return new org.codehaus.groovy.syntax.Token(
+                Types.lookup(text, Types.ANY),
+                text,
+                startLine,
+                startColumn
+        );
+    }
+    */
+
     @Override
     public List<List<AnnotationNode>> visitDims(DimsContext ctx) {
         List<List<AnnotationNode>> dimList =
@@ -3899,8 +4012,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
 
         return this.visitDims(ctx.dims());
     }
-
-    // type {       --------------------------------------------------------------------
 
     @Override
     public ClassNode visitType(TypeContext ctx) {
@@ -3971,7 +4082,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         throw createParsingFailedException("Unsupported type arguments or diamond: " + ctx.getText(), ctx);
     }
 
-
     @Override
     public GenericsType[] visitTypeArguments(TypeArgumentsContext ctx) {
         return ctx.typeArgument().stream().map(this::visitTypeArgument).toArray(GenericsType[]::new);
@@ -4022,8 +4132,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         return configureAST(ClassHelper.make(ctx.getText()), ctx);
     }
 
-    // } type       --------------------------------------------------------------------
-
     @Override
     public VariableExpression visitVariableDeclaratorId(VariableDeclaratorIdContext ctx) {
         return configureAST(new VariableExpression(this.visitIdentifier(ctx.identifier())), ctx);
@@ -4072,6 +4180,18 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
                                 .collect(Collectors.toList())),
                 ctx);
     }
+
+    /*
+    private String createExceptionMessage(Throwable t) {
+        StringWriter sw = new StringWriter();
+
+        try (PrintWriter pw = new PrintWriter(sw)) {
+            t.printStackTrace(pw);
+        }
+
+        return sw.toString();
+    }
+    */
 
     @Override
     public Statement visitBlockStatement(BlockStatementContext ctx) {
@@ -4459,17 +4579,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         classNode.setMixins(null);
     }
 
-    private static final Map<ClassNode, Object> TYPE_DEFAULT_VALUE_MAP = Maps.of(
-            ClassHelper.int_TYPE, 0,
-            ClassHelper.long_TYPE, 0L,
-            ClassHelper.double_TYPE, 0.0D,
-            ClassHelper.float_TYPE, 0.0F,
-            ClassHelper.short_TYPE, (short) 0,
-            ClassHelper.byte_TYPE, (byte) 0,
-            ClassHelper.char_TYPE, (char) 0,
-            ClassHelper.boolean_TYPE, Boolean.FALSE
-    );
-
     private Object findDefaultValueByType(ClassNode type) {
         return TYPE_DEFAULT_VALUE_MAP.get(type);
     }
@@ -4528,17 +4637,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
                 token.getCharPositionInLine() + 1
         );
     }
-
-    /*
-    private org.codehaus.groovy.syntax.Token createGroovyToken(String text, int startLine, int startColumn) {
-        return new org.codehaus.groovy.syntax.Token(
-                Types.lookup(text, Types.ANY),
-                text,
-                startLine,
-                startColumn
-        );
-    }
-    */
 
     /**
      * set the script source position
@@ -4671,18 +4769,6 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
         parser.addErrorListener(this.createANTLRErrorListener());
     }
 
-    /*
-    private String createExceptionMessage(Throwable t) {
-        StringWriter sw = new StringWriter();
-
-        try (PrintWriter pw = new PrintWriter(sw)) {
-            t.printStackTrace(pw);
-        }
-
-        return sw.toString();
-    }
-    */
-
     private static class DeclarationListStatement extends Statement {
         private final List<ExpressionStatement> declarationStatements;
 
@@ -4720,79 +4806,4 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
                     .collect(Collectors.toList());
         }
     }
-
-    private final ModuleNode moduleNode;
-    private final SourceUnit sourceUnit;
-    private final GroovyLangLexer lexer;
-    private final GroovyLangParser parser;
-    private final TryWithResourcesASTTransformation tryWithResourcesASTTransformation;
-    private final GroovydocManager groovydocManager;
-    private final List<ClassNode> classNodeList = new LinkedList<>();
-    private final Deque<ClassNode> classNodeStack = new ArrayDeque<>();
-    private final Deque<List<InnerClassNode>> anonymousInnerClassesDefinedInMethodStack = new ArrayDeque<>();
-
-    private Tuple2<GroovyParserRuleContext, Exception> numberFormatError;
-
-    private int visitingLoopStatementCnt;
-    private int visitingSwitchStatementCnt;
-    private int visitingAssertStatementCnt;
-    private int visitingClosureCnt;
-
-    private static final String QUESTION_STR = "?";
-    private static final String DOT_STR = ".";
-    private static final String SUB_STR = "-";
-    private static final String ASSIGN_STR = "=";
-    private static final String VALUE_STR = "value";
-    private static final String DOLLAR_STR = "$";
-    private static final String CALL_STR = "call";
-    private static final String THIS_STR = "this";
-    private static final String SUPER_STR = "super";
-    private static final String VOID_STR = "void";
-    private static final String SLASH_STR = "/";
-    private static final String SLASH_DOLLAR_STR = "/$";
-    private static final String TDQ_STR = "\"\"\"";
-    private static final String TSQ_STR = "'''";
-    private static final String SQ_STR = "'";
-    private static final String DQ_STR = "\"";
-    private static final String DOLLAR_SLASH_STR = "$/";
-    private static final String VAR_STR = "var";
-
-    private static final Map<String, String> QUOTATION_MAP = Maps.of(
-            DQ_STR, DQ_STR,
-            SQ_STR, SQ_STR,
-            TDQ_STR, TDQ_STR,
-            TSQ_STR, TSQ_STR,
-            SLASH_STR, SLASH_STR,
-            DOLLAR_SLASH_STR, SLASH_DOLLAR_STR
-    );
-
-    private static final String PACKAGE_INFO = "package-info";
-    private static final String PACKAGE_INFO_FILE_NAME = PACKAGE_INFO + ".groovy";
-
-    private static final String GROOVY_TRANSFORM_TRAIT = "groovy.transform.Trait";
-    private static final Set<String> PRIMITIVE_TYPE_SET = Collections.unmodifiableSet(new HashSet<>(Arrays.asList("boolean", "char", "byte", "short", "int", "long", "float", "double")));
-
-    private static final String INSIDE_PARENTHESES_LEVEL = "_INSIDE_PARENTHESES_LEVEL";
-
-    private static final String IS_INSIDE_INSTANCEOF_EXPR = "_IS_INSIDE_INSTANCEOF_EXPR";
-    private static final String IS_SWITCH_DEFAULT = "_IS_SWITCH_DEFAULT";
-    private static final String IS_NUMERIC = "_IS_NUMERIC";
-    private static final String IS_STRING = "_IS_STRING";
-    private static final String IS_INTERFACE_WITH_DEFAULT_METHODS = "_IS_INTERFACE_WITH_DEFAULT_METHODS";
-    private static final String IS_INSIDE_CONDITIONAL_EXPRESSION = "_IS_INSIDE_CONDITIONAL_EXPRESSION";
-    private static final String IS_COMMAND_EXPRESSION = "_IS_COMMAND_EXPRESSION";
-
-    private static final String PATH_EXPRESSION_BASE_EXPR = "_PATH_EXPRESSION_BASE_EXPR";
-    private static final String PATH_EXPRESSION_BASE_EXPR_GENERICS_TYPES = "_PATH_EXPRESSION_BASE_EXPR_GENERICS_TYPES";
-    private static final String PATH_EXPRESSION_BASE_EXPR_SAFE_CHAIN = "_PATH_EXPRESSION_BASE_EXPR_SAFE_CHAIN";
-    private static final String CMD_EXPRESSION_BASE_EXPR = "_CMD_EXPRESSION_BASE_EXPR";
-    private static final String TYPE_DECLARATION_MODIFIERS = "_TYPE_DECLARATION_MODIFIERS";
-    private static final String CLASS_DECLARATION_CLASS_NODE = "_CLASS_DECLARATION_CLASS_NODE";
-    private static final String VARIABLE_DECLARATION_VARIABLE_TYPE = "_VARIABLE_DECLARATION_VARIABLE_TYPE";
-    private static final String ANONYMOUS_INNER_CLASS_SUPER_CLASS = "_ANONYMOUS_INNER_CLASS_SUPER_CLASS";
-    private static final String INTEGER_LITERAL_TEXT = "_INTEGER_LITERAL_TEXT";
-    private static final String FLOATING_POINT_LITERAL_TEXT = "_FLOATING_POINT_LITERAL_TEXT";
-    private static final String ENCLOSING_INSTANCE_EXPRESSION = "_ENCLOSING_INSTANCE_EXPRESSION";
-
-    private static final String CLASS_NAME = "_CLASS_NAME";
 }

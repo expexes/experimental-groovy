@@ -56,6 +56,11 @@ plugins {
     id "com.github.ben-manes.versions" version '0.22.0'
 }
 
+ext {
+    groovyVersion = "3.0.0-${new Date().time}-EXPERIMENTAL"
+    groovyBundleVersion = "3.0.0.${new Date().time}.EXPERIMENTAL"
+}
+
 buildScan {
     termsOfServiceUrl = 'https://gradle.com/terms-of-service'
     apply from: 'gradle/build-scans.gradle'
