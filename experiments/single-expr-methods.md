@@ -1,5 +1,16 @@
 # Single Expression Methods
 
+### You can't use:
+- `if` statement
+- `for` loop statement
+- `return`
+
+### You can use:
+- `switch`
+- `try catch`
+- lambda
+- any one-line expression
+
 ```groovy
 def sum(a, b) = a + b
 ```
