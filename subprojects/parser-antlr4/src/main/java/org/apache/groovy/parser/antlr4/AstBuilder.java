@@ -4780,6 +4780,7 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> implements Groov
     private static final String DQ_STR = "\"";
     private static final String DOLLAR_SLASH_STR = "$/";
     private static final String VAR_STR = "var";
+    private static final String VAL_STR = "val";
 
     private static final Map<String, String> QUOTATION_MAP = Maps.of(
             DQ_STR, DQ_STR,

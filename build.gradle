@@ -88,6 +88,7 @@ logger.lifecycle "Using Java from $javaHome (version ${System.getProperty('java.
 
 allprojects {
     apply plugin: 'java'
+	apply plugin: 'groovy'
 
     buildDir = 'target'
     sourceCompatibility = 1.8

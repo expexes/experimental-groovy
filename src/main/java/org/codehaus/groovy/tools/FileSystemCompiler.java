@@ -45,6 +45,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static groovy.ui.GroovyMain.processConfigScriptText;
 import static groovy.ui.GroovyMain.processConfigScripts;
 
 /**
@@ -362,6 +363,15 @@ public class FileSystemCompiler {
                     paramLabel = "<source-files>")
         private List<String> files;
 
+        @Option(names = {"-cs", "--compile-static"}, description = "CompileStatic")
+        private boolean compileStatic;
+
+        @Option(names = {"-cd", "--compile-dynamic"}, description = "CompileDynamic")
+        private boolean compileDynamic;
+
+        @Option(names = {"-tc", "--type-checked"}, description = "TypeChecked")
+        private boolean typeChecked;
+
         public CompilerConfiguration toCompilerConfiguration() throws IOException {
             // Setup the configuration data
             CompilerConfiguration configuration = new CompilerConfiguration();
@@ -391,6 +401,17 @@ public class FileSystemCompiler {
                 configuration.getOptimizationOptions().put("int", false);
                 configuration.getOptimizationOptions().put("indy", true);
             }
+
+            final StringBuilder defaultScriptConfig = new StringBuilder();
+            defaultScriptConfig.append("withConfig (configuration) {\n");
+            if (!compileDynamic)
+                defaultScriptConfig.append("ast(groovy.transform.CompileStatic);");
+            if (compileDynamic)
+                defaultScriptConfig.append("ast(groovy.transform.CompileDynamic);");
+            if (typeChecked)
+                defaultScriptConfig.append("ast(groovy.transform.TypeChecked);");
+            defaultScriptConfig.append("\n}");
+            processConfigScriptText(defaultScriptConfig.toString(), configuration);
 
             String configScripts = System.getProperty("groovy.starter.configscripts", null);
             if (configScript != null || (configScripts != null && !configScripts.isEmpty())) {

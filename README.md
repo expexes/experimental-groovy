@@ -3,4 +3,5 @@
 
 ### Features:
 - [single expression methods](experiments/single-expr-methods.md)
-- // more in future..
+- compile static with `groovyc` by default
+- `-cs`, `-cd`, `-tc` arguments

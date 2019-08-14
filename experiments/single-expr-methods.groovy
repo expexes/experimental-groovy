@@ -1,14 +1,14 @@
 import java.util.stream.Collectors
 
-def sum(a, b) = a + b
+def sum(int a, int b) = a + b
 assert sum(1, 2) == 3
 
 
-def oddOnly(List<Number> nums) = nums.stream().filter(n -> n % 2 != 0).collect(Collectors.toList())
+def oddOnly(List<Integer> nums) = nums.stream().filter(n -> n % 2 != 0).collect(Collectors.toList())
 assert oddOnly([1, 2, 3, 4, 5]) == [1, 3, 5]
 
 
-def buildUrl(method) = "https://api.teslex.tech/$method"
+def buildUrl(String method) = "https://api.teslex.tech/$method"
 assert buildUrl("restart") == "https://api.teslex.tech/restart"
 
 interface Executable {

@@ -126,6 +126,7 @@ modifier
           |   VOLATILE
           |   DEF
           |   VAR
+          |   VAL
           )
     ;
 

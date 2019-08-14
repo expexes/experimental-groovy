@@ -220,8 +220,17 @@ public class GroovyMain {
         @Option(names = {"-h", "--help"}, usageHelp = true, description = "Show this help message and exit")
         private boolean helpRequested;
 
-        @Option(names = {"-v", "--version"}, versionHelp = true, description = "Print version information and exit")
+        @Option(names = {"-v", "--version"}, description = "Print version information and exit")
         private boolean versionRequested;
+
+        @Option(names = {"-cs", "--compile-static"}, description = "CompileStatic")
+        private boolean compileStatic;
+
+        @Option(names = {"-cd", "--compile-dynamic"}, description = "CompileDynamic")
+        private boolean compileDynamic;
+
+        @Option(names = {"-tc", "--type-checked"}, description = "TypeChecked")
+        private boolean typeChecked;
 
         @Unmatched
         List<String> arguments = new ArrayList<String>();
@@ -240,6 +249,17 @@ public class GroovyMain {
 
             // add the ability to parse scripts with a specified encoding
             main.conf.setSourceEncoding(encoding);
+
+            final StringBuilder defaultScriptConfig = new StringBuilder();
+            defaultScriptConfig.append("withConfig (configuration) {\n");
+            if (compileStatic)
+                defaultScriptConfig.append("ast(groovy.transform.CompileStatic);");
+            if (compileDynamic)
+                defaultScriptConfig.append("ast(groovy.transform.CompileDynamic);");
+            if (typeChecked)
+                defaultScriptConfig.append("ast(groovy.transform.TypeChecked);");
+            defaultScriptConfig.append("\n}");
+            processConfigScriptText(defaultScriptConfig.toString(), main.conf);
 
             main.debug = debug;
             main.conf.setDebug(main.debug);
@@ -310,16 +330,30 @@ public class GroovyMain {
 
     public static void processConfigScripts(List<String> scripts, CompilerConfiguration conf) throws IOException {
         if (scripts.isEmpty()) return;
+
+        GroovyShell shell = getConfigScriptShell(conf);
+
+        for (String script : scripts) {
+            shell.evaluate(new File(script));
+        }
+    }
+
+    public static void processConfigScriptText(String scriptText, CompilerConfiguration conf) throws IOException {
+        if (scriptText.isEmpty()) return;
+
+        GroovyShell shell = getConfigScriptShell(conf);
+
+        shell.evaluate(scriptText);
+    }
+
+    private static GroovyShell getConfigScriptShell(CompilerConfiguration conf) {
         Binding binding = new Binding();
         binding.setVariable("configuration", conf);
         CompilerConfiguration configuratorConfig = new CompilerConfiguration();
         ImportCustomizer customizer = new ImportCustomizer();
         customizer.addStaticStars("org.codehaus.groovy.control.customizers.builder.CompilerCustomizationBuilder");
         configuratorConfig.addCompilationCustomizers(customizer);
-        GroovyShell shell = new GroovyShell(binding, configuratorConfig);
-        for (String script : scripts) {
-            shell.evaluate(new File(script));
-        }
+        return new GroovyShell(binding, configuratorConfig);
     }
 
 
