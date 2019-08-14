@@ -1,4 +1,4 @@
-# Single Expression Methods
+# Single-Expression Methods
 
 ### You can't use:
 - `if` statement
