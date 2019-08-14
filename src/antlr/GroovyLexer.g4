@@ -349,7 +349,6 @@ THREADSAFE      : 'threadsafe'; // reserved keyword
 
 // the reserved type name of Java10
 VAR             : 'var';
-VAL             : 'val';
 
 // §3.9 Keywords
 BuiltInPrimitiveType

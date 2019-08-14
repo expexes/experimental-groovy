@@ -16,3 +16,14 @@ interface Executable {
 }
 
 new Executable(){}.execute()
+
+def except(Closure cl) = try () {
+	cl()
+	return true
+} catch (Exception e) {
+	return false
+}
+
+assert except {
+	throw new RuntimeException("false")
+}
