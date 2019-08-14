@@ -220,7 +220,7 @@ public class GroovyMain {
         @Option(names = {"-h", "--help"}, usageHelp = true, description = "Show this help message and exit")
         private boolean helpRequested;
 
-        @Option(names = {"-v", "--version"}, description = "Print version information and exit")
+        @Option(names = {"-v", "--version"}, versionHelp = true, description = "Print version information and exit")
         private boolean versionRequested;
 
         @Option(names = {"-cs", "--compile-static"}, description = "CompileStatic")
